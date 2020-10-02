@@ -1,21 +1,12 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
-from google_drive_downloader import GoogleDriveDownloader as gdd
-import numpy as np
 import json
 import mne
+import scipy
 import matplotlib
+import numpy as np
+from sklearn.svm import SVC
 from scipy.signal import stft
 from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
-from sklearn import metrics
-
-
-# In[2]:
+from google_drive_downloader import GoogleDriveDownloader as gdd
 
 
 dataset_ids = {
@@ -51,175 +42,59 @@ gdd.download_file_from_google_drive(file_id=desc,
                                     dest_path='files/descriptor.json',
                                     showsize=True)
 
+data = np.load('files/data.npy')
+labels = np.load('files/labels.npy')
 
-# In[4]:
-
-
-# carregamento
-X = np.load('files/data.npy')
-y = np.load('files/labels.npy')
 desc_file = open('files/descriptor.json')
-descriptor = json.loads(desc_file.read())
+deor = json.loads(desc_file.read())
 desc_file.close()
-print('Estruturas => dados', X.shape, 'labels', y.shape)
 
+print('Estruturas => dados', data.shape, 'labels', labels.shape)
+print(labels)
 
-# In[5]:
+data = data[:,:256,:]
 
-
-print('Características do voluntário:', descriptor[str(DS)])
-print('\nRótulos:', descriptor['frequencies'])
-print('\nTaxa de amostragem:', descriptor['sampling_rate'])
-
-
-# In[6]:
-
-
-'''
-#criacao mne
-X=X[:,:256,:]
-ch_names = X.shape[1]
-sfreq = X.shape[-1]/5
-ch_types = 'eeg'
-info = mne.create_info(ch_names, sfreq, ch_types)
-
-'''
-
-
-# In[7]:
-
-
-descriptor['sampling_rate'] = X.shape[-1] / 5
-print('Nova taxa de amostragem: {} Hz'.format(descriptor['sampling_rate']))
-
-
-# In[8]:
-
-
-
-
-get_ipython().run_line_magic('matplotlib', 'inline')
-matplotlib.rcParams['figure.figsize'] = [12, 8]
-
+trial_duration = 5
+sampling_frequency = data.shape[-1] / trial_duration
 montage = mne.channels.make_standard_montage('EGI_256')
-info = mne.create_info(montage.ch_names,
-                       sfreq=descriptor['sampling_rate'],
-                       ch_types='eeg')
+ch_names = data.shape[1]
+ch_types = 'eeg'
+
+
+info = mne.create_info(montage.ch_names, sampling_frequency, ch_types)
+
+
 info.set_montage(montage)
 
 
-# In[9]:
+events = np.array([[index, 0, event] for index, event in enumerate(labels)])
 
+epoch = mne.EpochsArray(data, info, events)
 
-# o 257º eletrodo é o VREF (referência). Inútil -> Podemos tirá-lo...
-X = X[:,:256,:]
-# objeto event é uma matriz tridimensional conforme explicado em aula
-events = np.array([[i, 0, e] for i, e in enumerate(y)])
-# instanciando objeto EpochArray
-epoch = mne.EpochsArray(X, info, events=events)
-
-
-# In[10]:
-
-
-epoch_ex = epoch.copy().pick_channels(['E108', 'E109', 'E116', 'E125', 'E118', 'E117', 'E126',
+filtered_epoch = epoch.copy().pick_channels(['E108', 'E109', 'E116', 'E125', 'E118', 'E117', 'E126',
                       'E139', 'E127', 'E138', 'E140', 'E150', 'E151'])
-epoch_ex.filter(l_freq = 5.0, h_freq = 14.0)
-print(epoch.get_data().shape)
-print(epoch_ex.get_data().shape)
+filtered_epoch.filter(l_freq = 5.0, h_freq = 14.0)
 
 
-# In[11]:
+X, _ = mne.time_frequency.psd_multitaper(filtered_epoch, fmin=5.0, fmax=14.0)
 
 
-matplotlib.rcParams['figure.figsize'] = [6., 4.]
 
-for y in range(1,6):
-    for i in (3, 9, 11):
-        print("Evento " + str(y))
-        print("Rótulos", descriptor['frequencies'])
-        epoch_ex[str(y)][-i].plot_psd(fmin = 5., fmax = 14.)
-        print()
-        
-
-# CAR: Técnica usada para o calculo de uma media dos eletrodos atraves do eletrodo de referencia
-# In[12]:
+X = X.reshape(X.shape[0], X.shape[1] * X.shape[2])
 
 
-### FIltro
-
-epo_b2 = epoch_ex.copy().filter(l_freq=5, h_freq=None)
-epo_b2.filter(l_freq=None, h_freq=14)
-
-a = epoch_ex.get_data()
-a = a.transpose(1, 0, 2)
-a = a.reshape(13, 125 * 1205)
-
-# criando o objeto `info` (o restante dos valores já temos)
-info = mne.create_info(ch_names=13,
-                       sfreq=241.,
-                       ch_types='eeg')
-
-raw = mne.io.RawArray(a, info)
-epo_ref = mne.set_eeg_reference(epoch_ex, ref_channels=['E116', 'E126', 'E150'])
-
-
-# In[13]:
-
-
-### Features
-data = epoch_ex.get_data()
-print(data.shape) # domínio do tempo
-
-# aplicando STFT
-_, _, w = stft(data, fs=241, nperseg=32, noverlap=16)
-# w = np.swapaxes(w, 3, 4)
-print(w.shape)
-
-W = np.abs(w) ** 2
-
-fmn = np.mean(W, axis=-1)
-print('FMN:', fmn.shape)
-
-# Root of sum of squares
-rss = np.sqrt(np.sum(W, axis=-1))
-print('RSS:', rss.shape)
-features = list()
-for feature in (fmn, rss,):
-    feature = feature.transpose(0, 2, 1)
-    feature = feature.reshape(feature.shape[0] * feature.shape[1],
-                              feature.shape[2])
-    features.append(feature)
-
-# vetor de características final
-X = np.concatenate(features, axis=-1)
-print('Shape dos dados:', X.shape)
 y = np.load('files/labels.npy')
-print('Shape original dos labels', y.shape)
-
-size = int(X.shape[0] / y.shape[0])
-y = np.concatenate([y for i in range(size)])
-print('Shape final dos labels', y.shape)
 
 
-# In[ ]:
-
-
-###Classificador
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, train_size=0.7, shuffle=True)
 for count in range(50):
     for kernel in ['linear', 'poly', 'rbf', 'sigmoid']:
         for gamma in [10, 1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]:
             for C in [0.01, 0.1, 1, 10, 100, 1000]:
-                X_train, X_test, y_train, y_test = train_test_split(
-                    X, y, train_size=0.7, shuffle=True)
-                clf = SVC(kernel=kernel,gamma=gamma, C=C)
-                clf = clf.fit(X_train, y_train)
+                X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.7, shuffle=True)
+                clf = SVC(gamma=gamma, kernel=kernel, C=C)
+                clf.fit(X_train, y_train)
                 res = clf.predict(X_test)
-                if ( 100*metrics.accuracy_score(y_test, res) >= 10.0): # 92
-                    print(count)
-                    print('Kernel:{} | Gamma:{} e C:{} | Accuracy: {:.2f}%'.format(
-                        kernel, gamma, C, 100*metrics.accuracy_score(y_test, res))
-                    )
+                tot_hit = sum([1 for i in range(len(res)) if res[i] == y_test[i]])
+                if tot_hit / X_test.shape[0] * 100 > 50:
+                    print('Acurácia: {:.2f}%'.format(tot_hit / X_test.shape[0] * 100))
 
