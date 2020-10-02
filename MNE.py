@@ -5,6 +5,7 @@ import matplotlib
 import numpy as np
 from sklearn.svm import SVC
 from scipy.signal import stft
+from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from google_drive_downloader import GoogleDriveDownloader as gdd
 
@@ -52,15 +53,16 @@ desc_file.close()
 print('Estruturas => dados', data.shape, 'labels', labels.shape)
 print(labels)
 
+#Retirando o eletrodo de referencia
 data = data[:,:256,:]
-
-trial_duration = 5
-sampling_frequency = data.shape[-1] / trial_duration
+# quantidade_de_dados / tempo_do_trial
+sampling_frequency = data.shape[-1] / 5
+#Especificando o tipo de touca
 montage = mne.channels.make_standard_montage('EGI_256')
 ch_names = data.shape[1]
 ch_types = 'eeg'
 
-
+#Criando as informações do obejto mne
 info = mne.create_info(montage.ch_names, sampling_frequency, ch_types)
 
 
@@ -70,30 +72,26 @@ info.set_montage(montage)
 events = np.array([[index, 0, event] for index, event in enumerate(labels)])
 
 epoch = mne.EpochsArray(data, info, events)
-
+#Escolhendo quais serão os eletrodos usados para o treino e teste
 filtered_epoch = epoch.copy().pick_channels(['E108', 'E109', 'E116', 'E125', 'E118', 'E117', 'E126',
                       'E139', 'E127', 'E138', 'E140', 'E150', 'E151'])
+#realizando o corte de frequencia menor que 5 e maior que 14
 filtered_epoch.filter(l_freq = 5.0, h_freq = 14.0)
 
-
-X, _ = mne.time_frequency.psd_multitaper(filtered_epoch, fmin=5.0, fmax=14.0)
-
-
-
-X = X.reshape(X.shape[0], X.shape[1] * X.shape[2])
+#calculo do PSD
+data, _ = mne.time_frequency.psd_multitaper(filtered_epoch, fmin=5.0, fmax=14.0)
 
 
-y = np.load('files/labels.npy')
+#Mudando o shape do data para podermos passar para o SVM
+data = data.reshape(data.shape[0], data.shape[1] * data.shape[2])
 
-
+#Classificador SVC roda 50 vezes com valores diferentes para o gamma e C.
 for count in range(50):
-    for kernel in ['linear', 'poly', 'rbf', 'sigmoid']:
-        for gamma in [10, 1, 0.1, 0.01, 0.001, 0.0001, 0.00001, 0.000001]:
-            for C in [0.01, 0.1, 1, 10, 100, 1000]:
-                X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=0.7, shuffle=True)
-                clf = SVC(gamma=gamma, kernel=kernel, C=C)
-                clf.fit(X_train, y_train)
-                res = clf.predict(X_test)
-                tot_hit = sum([1 for i in range(len(res)) if res[i] == y_test[i]])
-                if tot_hit / X_test.shape[0] * 100 > 50:
-                    print('Acurácia: {:.2f}%'.format(tot_hit / X_test.shape[0] * 100))
+    for gamma in [10, 1, 0.1, 0.01, 0.001, 0.0001, 0.00001]:
+        for C in [0.01, 0.1, 1, 10, 100, 1000]:
+            X_train, X_test, y_train, y_test = train_test_split(data, labels, test_size=0.2, shuffle=True, stratify=labels)
+            svc = SVC(C=C, kernel='linear', gamma=gamma)
+            svc.fit(X_train, y_train)
+            resultado = svc.predict(X_test)
+            if (classification_report(y_pred = resultado, y_true = y_test, output_dict=True, zero_division=1)['accuracy']>0.6):
+                print('Acuracia: ',classification_report(y_pred = resultado, y_true = y_test, output_dict=True)['accuracy'])
