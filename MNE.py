@@ -72,13 +72,14 @@ info.set_montage(montage)
 events = np.array([[index, 0, event] for index, event in enumerate(labels)])
 
 epoch = mne.EpochsArray(data, info, events)
-#Escolhendo quais serão os eletrodos usados para o treino e teste
+#Escolhendo quais serão os eletrodos usados para o treino e teste. Os eletrodos escolhidos foram os mesmos
+#que foram usados durante a aula. Com esses eletrodos foi obtida a maior acuracia.
 filtered_epoch = epoch.copy().pick_channels(['E108', 'E109', 'E116', 'E125', 'E118', 'E117', 'E126',
                       'E139', 'E127', 'E138', 'E140', 'E150', 'E151'])
 #realizando o corte de frequencia menor que 5 e maior que 14
 filtered_epoch.filter(l_freq = 5.0, h_freq = 14.0)
 
-#calculo do PSD
+#calculo do PSD. O multitaper ja faz a obtenção de caracteristicas.
 data, _ = mne.time_frequency.psd_multitaper(filtered_epoch, fmin=5.0, fmax=14.0)
 
 
