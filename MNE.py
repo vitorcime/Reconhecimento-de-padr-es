@@ -5,7 +5,11 @@ import matplotlib
 import numpy as np
 from sklearn.svm import SVC
 from scipy.signal import stft
+<<<<<<< HEAD
 from sklearn.model_selection import GridSearchCV
+=======
+from sklearn.metrics import classification_report
+>>>>>>> 0f2070c112c017500254ceded01eded98b9a697e
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedShuffleSplit
 from google_drive_downloader import GoogleDriveDownloader as gdd
@@ -54,15 +58,16 @@ desc_file.close()
 print('Estruturas => dados', data.shape, 'labels', labels.shape)
 print(labels)
 
+#Retirando o eletrodo de referencia
 data = data[:,:256,:]
-
-trial_duration = 5
-sampling_frequency = data.shape[-1] / trial_duration
+# quantidade_de_dados / tempo_do_trial
+sampling_frequency = data.shape[-1] / 5
+#Especificando o tipo de touca
 montage = mne.channels.make_standard_montage('EGI_256')
 ch_names = data.shape[1]
 ch_types = 'eeg'
 
-
+#Criando as informações do obejto mne
 info = mne.create_info(montage.ch_names, sampling_frequency, ch_types)
 
 
@@ -72,9 +77,11 @@ info.set_montage(montage)
 events = np.array([[index, 0, event] for index, event in enumerate(labels)])
 
 epoch = mne.EpochsArray(data, info, events)
-
+#Escolhendo quais serão os eletrodos usados para o treino e teste. Os eletrodos escolhidos foram os mesmos
+#que foram usados durante a aula. Com esses eletrodos foi obtida a maior acuracia.
 filtered_epoch = epoch.copy().pick_channels(['E108', 'E109', 'E116', 'E125', 'E118', 'E117', 'E126',
                       'E139', 'E127', 'E138', 'E140', 'E150', 'E151'])
+#realizando o corte de frequencia menor que 5 e maior que 14
 filtered_epoch.filter(l_freq = 5.0, h_freq = 14.0)
 
 '''
